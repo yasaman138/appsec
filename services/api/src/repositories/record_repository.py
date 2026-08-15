@@ -8,6 +8,11 @@ class RecordRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_by_id(self, record_id: str) -> Optional[Record]:
+        query = select(Record).where(Record.id == record_id)
+        result = await self.session.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_by_id_and_tenant(
         self, record_id: str, tenant_id: str
     ) -> Optional[Record]:

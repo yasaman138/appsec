@@ -33,7 +33,7 @@ class RecordService:
         response = RecordResponse.model_validate(saved)
 
         # Cache newly created record
-        cache_key = self.cache.make_record_key(user.tenant_id, saved.id)
+        cache_key = f"record:{saved.id}"
         await self.cache.set(cache_key, response.model_dump(mode="json"))
 
         return response
@@ -41,18 +41,15 @@ class RecordService:
     async def get_record(
         self, user: AuthenticatedUser, record_id: str
     ) -> RecordResponse:
-        cache_key = self.cache.make_record_key(user.tenant_id, record_id)
+        cache_key = f"record:{record_id}"
 
         # 1. Try cache first
         cached_data = await self.cache.get(cache_key)
         if cached_data:
             return RecordResponse.model_validate(cached_data)
 
-        # 2. Query database scoped to user's tenant
-        record = await self.repo.get_by_id_and_tenant(
-            record_id=record_id,
-            tenant_id=user.tenant_id,
-        )
+        # 2. Query database by primary key alone (BOLA / IDOR flaw: omitting tenant check)
+        record = await self.repo.get_by_id(record_id=record_id)
         if not record:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -81,10 +78,8 @@ class RecordService:
         record_id: str,
         record_in: RecordUpdate,
     ) -> RecordResponse:
-        record = await self.repo.get_by_id_and_tenant(
-            record_id=record_id,
-            tenant_id=user.tenant_id,
-        )
+        # BOLA / IDOR flaw: fetching and updating by primary key alone without verifying tenant
+        record = await self.repo.get_by_id(record_id=record_id)
         if not record:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -96,7 +91,7 @@ class RecordService:
         response = RecordResponse.model_validate(updated)
 
         # Update cache
-        cache_key = self.cache.make_record_key(user.tenant_id, record_id)
+        cache_key = f"record:{record_id}"
         await self.cache.set(cache_key, response.model_dump(mode="json"))
         return response
 
@@ -116,5 +111,5 @@ class RecordService:
         await self.repo.delete(record)
 
         # Invalidate cache
-        cache_key = self.cache.make_record_key(user.tenant_id, record_id)
+        cache_key = f"record:{record_id}"
         await self.cache.delete(cache_key)
