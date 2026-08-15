@@ -1,0 +1,1 @@
+# Core Resource API Package
