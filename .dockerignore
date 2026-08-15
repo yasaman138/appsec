@@ -1,0 +1,10 @@
+.git
+.antigravity
+docs/plan
+__pycache__
+*.pyc
+.pytest_cache
+*.db
+*.sqlite
+.env
+.env.*
