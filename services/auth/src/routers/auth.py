@@ -7,6 +7,7 @@ from services.auth.src.repositories.user_repository import UserRepository
 from services.auth.src.schemas.auth import (
     Token,
     TokenPayload,
+    TokenVerifyRequest,
     UserLogin,
     UserRegister,
     UserResponse,
@@ -92,3 +93,28 @@ async def verify_token(
     payload: Annotated[TokenPayload, Depends(get_current_user_payload)],
 ) -> TokenPayload:
     return payload
+
+
+@router.post(
+    "/verify",
+    response_model=TokenPayload,
+    status_code=status.HTTP_200_OK,
+    summary="Verify JWT token and retrieve claims via POST",
+)
+async def verify_token_post(
+    body: Optional[TokenVerifyRequest] = None,
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> TokenPayload:
+    token: Optional[str] = None
+    if body and body.token:
+        token = body.token
+    elif authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ")[1].strip()
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing token in request body or Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return decode_access_token(token)

@@ -41,6 +41,7 @@ async def health_check():
 
 
 app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

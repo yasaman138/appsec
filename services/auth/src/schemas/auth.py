@@ -32,6 +32,10 @@ class TokenPayload(BaseModel):
     iat: Optional[int] = None
 
 
+class TokenVerifyRequest(BaseModel):
+    token: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     id: str
     username: str
