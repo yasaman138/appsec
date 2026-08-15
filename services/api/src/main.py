@@ -5,6 +5,7 @@ from services.api.src.cache import cache_client
 from services.api.src.config import settings
 from services.api.src.database import init_db
 from services.api.src.routers.health import router as health_router
+from services.api.src.routers.integrations import router as integrations_router
 from services.api.src.routers.records import router as records_router
 
 
@@ -39,6 +40,8 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(records_router)
 app.include_router(records_router, prefix="/api/v1")
+app.include_router(integrations_router)
+app.include_router(integrations_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
