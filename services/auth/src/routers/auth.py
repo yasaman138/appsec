@@ -1,5 +1,5 @@
-from typing import Annotated
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from typing import Annotated, Optional
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.auth.src.database import get_db
@@ -102,7 +102,7 @@ async def verify_token(
     summary="Verify JWT token and retrieve claims via POST",
 )
 async def verify_token_post(
-    body: Optional[TokenVerifyRequest] = None,
+    body: Optional[TokenVerifyRequest] = Body(default=None),
     authorization: Annotated[Optional[str], Header()] = None,
 ) -> TokenPayload:
     token: Optional[str] = None
