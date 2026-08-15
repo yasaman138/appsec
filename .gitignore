@@ -1,0 +1,35 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environments and Secrets
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+env/
+
+# Databases & local storage
+*.db
+*.sqlite
+*.sqlite3
+data/
+postgres_data/
+redis_data/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Internal Agent Configuration & Planning (Must never be committed)
+.antigravity/
+.antigravity/**
+docs/plan/
+docs/plan/**
