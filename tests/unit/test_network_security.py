@@ -64,3 +64,14 @@ def test_validate_safe_url_rejects_empty_or_malformed():
     with pytest.raises(HTTPException) as exc_info:
         validate_safe_url("not_a_valid_url")
     assert exc_info.value.status_code == 400
+
+
+def test_resolve_and_validate_target_pins_ip_and_preserves_host_header():
+    from services.api.src.utils.network import resolve_and_validate_target
+
+    target = resolve_and_validate_target("http://93.184.216.34/webhook")
+    assert target.hostname == "93.184.216.34"
+    assert target.resolved_ip == "93.184.216.34"
+    assert target.host_header == "93.184.216.34"
+    assert target.pinned_url == "http://93.184.216.34/webhook"
+

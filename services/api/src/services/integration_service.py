@@ -6,7 +6,7 @@ from services.api.src.schemas.integration import (
     WebhookTestRequest,
     WebhookTestResponse,
 )
-from services.api.src.utils.network import validate_safe_url
+from services.api.src.utils.network import resolve_and_validate_target
 
 
 class IntegrationService:
@@ -16,8 +16,14 @@ class IntegrationService:
     async def test_webhook(
         self, request_in: WebhookTestRequest
     ) -> WebhookTestResponse:
-        # Defense-in-depth: Validate target URL against SSRF (loopback, private subnets, cloud metadata)
-        safe_url = validate_safe_url(request_in.url)
+        # Defense-in-depth: Validate target URL against SSRF and resolve/pin target IP against DNS Rebinding (TOCTOU)
+        target = resolve_and_validate_target(request_in.url)
+        safe_url = target.original_url
+        dispatch_url = target.pinned_url if target.scheme == "http" else target.original_url
+
+        headers = dict(request_in.headers or {})
+        if target.scheme == "http":
+            headers.setdefault("Host", target.host_header)
 
         start_time = time.time()
         try:
@@ -37,8 +43,8 @@ class IntegrationService:
                 async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
                     req = client.build_request(
                         method=method,
-                        url=safe_url,
-                        headers=request_in.headers,
+                        url=dispatch_url,
+                        headers=headers,
                         json=json_payload,
                     )
                     resp = await client.send(req)

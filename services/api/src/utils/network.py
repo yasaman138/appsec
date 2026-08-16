@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import ipaddress
 import socket
 from urllib.parse import urlparse
@@ -24,6 +25,17 @@ RESTRICTED_NETWORKS = [
     ipaddress.ip_network("fe80::/10"),          # Link-Local Unicast
     ipaddress.ip_network("ff00::/8"),           # Multicast
 ]
+
+
+@dataclass
+class ValidatedTarget:
+    original_url: str
+    scheme: str
+    hostname: str
+    port: int
+    resolved_ip: str
+    pinned_url: str
+    host_header: str
 
 
 def is_ip_blocked(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -55,11 +67,10 @@ def is_ip_blocked(ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool
     return False
 
 
-def validate_safe_url(url: str) -> str:
+def resolve_and_validate_target(url: str) -> ValidatedTarget:
     """
-    Validates that a URL is well-formed, uses HTTP/HTTPS schemes, and resolves
-    strictly to non-restricted, public Internet IP addresses (mitigating SSRF).
-    Raises HTTPException(400) if validation fails.
+    Parses and validates a URL, resolves all target IPs, ensures NONE are in restricted CIDRs,
+    and returns a ValidatedTarget with an IP-pinned URL and Host header to prevent DNS rebinding (TOCTOU).
     """
     if not url or not isinstance(url, str):
         raise HTTPException(
@@ -84,6 +95,7 @@ def validate_safe_url(url: str) -> str:
         )
 
     port = parsed.port or (443 if scheme == "https" else 80)
+    host_header = hostname if (parsed.port is None or (scheme == "http" and port == 80) or (scheme == "https" and port == 443)) else f"{hostname}:{port}"
 
     # Direct IP address check
     try:
@@ -93,7 +105,15 @@ def validate_safe_url(url: str) -> str:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"SSRF validation blocked: Direct request to restricted IP address '{ip}' is not permitted",
             )
-        return url
+        return ValidatedTarget(
+            original_url=url,
+            scheme=scheme,
+            hostname=hostname,
+            port=port,
+            resolved_ip=str(ip),
+            pinned_url=url,
+            host_header=host_header,
+        )
     except ValueError:
         # Hostname is a domain name -> Perform DNS resolution
         pass
@@ -113,6 +133,7 @@ def validate_safe_url(url: str) -> str:
                 detail=f"DNS resolution failure: Hostname '{hostname}' could not be resolved",
             )
 
+        resolved_ips: list[str] = []
         for entry in addr_info:
             sockaddr = entry[4]
             resolved_ip_str = sockaddr[0]
@@ -123,15 +144,42 @@ def validate_safe_url(url: str) -> str:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"SSRF validation blocked: Hostname '{hostname}' resolved to restricted IP '{resolved_ip_str}'",
                     )
+                resolved_ips.append(resolved_ip_str)
             except ValueError:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid resolved IP address: '{resolved_ip_str}'",
                 )
+
+        # Build IP-pinned URL to eliminate DNS rebinding TOCTOU window
+        chosen_ip = resolved_ips[0]
+        ip_formatted = f"[{chosen_ip}]" if ":" in chosen_ip else chosen_ip
+        
+        # Replace netloc with pinned IP and port
+        netloc = f"{ip_formatted}:{port}" if parsed.port else ip_formatted
+        pinned_url = parsed._replace(netloc=netloc).geturl()
+
+        return ValidatedTarget(
+            original_url=url,
+            scheme=scheme,
+            hostname=hostname,
+            port=port,
+            resolved_ip=chosen_ip,
+            pinned_url=pinned_url,
+            host_header=host_header,
+        )
     except socket.gaierror as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"DNS resolution error for hostname '{hostname}': {str(e)}",
         )
 
-    return url
+
+def validate_safe_url(url: str) -> str:
+    """
+    Validates that a URL is well-formed, uses HTTP/HTTPS schemes, and resolves
+    strictly to non-restricted, public Internet IP addresses (mitigating SSRF).
+    Raises HTTPException(400) if validation fails.
+    """
+    target = resolve_and_validate_target(url)
+    return target.original_url
