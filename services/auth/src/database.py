@@ -15,10 +15,19 @@ if db_url.startswith("postgresql://"):
 elif db_url.startswith("sqlite://") and not db_url.startswith("sqlite+aiosqlite://"):
     db_url = db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
 
+# Configure connection engine with pooling security and pre-ping health validation
+engine_kwargs = {"echo": settings.DEBUG, "future": True}
+if "postgresql" in db_url:
+    engine_kwargs.update({
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_recycle": 3600,
+    })
+
 engine = create_async_engine(
     db_url,
-    echo=settings.DEBUG,
-    future=True,
+    **engine_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(

@@ -55,3 +55,21 @@ def test_jwt_security_claim_parsing():
     assert user.user_id == "user-789"
     assert user.tenant_id == "tenant-beta"
     assert user.role == "editor"
+
+
+@pytest.mark.asyncio
+async def test_http_security_headers_present():
+    from httpx import ASGITransport, AsyncClient
+    from services.api.src.main import app
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.get("/health")
+        assert resp.status_code == 200
+        assert resp.headers.get("x-content-type-options") == "nosniff"
+        assert resp.headers.get("x-frame-options") == "DENY"
+        assert resp.headers.get("x-xss-protection") == "1; mode=block"
+        assert "max-age" in resp.headers.get("strict-transport-security", "")
+        assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
