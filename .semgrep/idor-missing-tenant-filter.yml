@@ -1,0 +1,30 @@
+rules:
+  - id: idor-missing-tenant-filter
+    languages:
+      - python
+    severity: ERROR
+    message: >-
+      Database query filters by resource ID without scoping to tenant context (e.g., Record.tenant_id == tenant_id).
+      This introduces a Broken Object Level Authorization (BOLA / IDOR) vulnerability allowing cross-tenant data access.
+    metadata:
+      cwe:
+        - "CWE-639: Authorization Bypass Through User-Controlled Key"
+        - "CWE-284: Improper Access Control"
+      owasp:
+        - "A01:2021 - Broken Access Control"
+        - "API1:2023 - Broken Object Level Authorization (BOLA)"
+      category: security
+      technology:
+        - python
+        - sqlalchemy
+        - fastapi
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+    patterns:
+      - pattern-either:
+          - pattern: select($MODEL).where($MODEL.id == $ID)
+          - pattern: select($MODEL).filter($MODEL.id == $ID)
+      - pattern-not: select(User).where(...)
+      - pattern-not: select($MODEL).where(..., $MODEL.tenant_id == $TENANT, ...)
+      - pattern-not: select($MODEL).filter(..., $MODEL.tenant_id == $TENANT, ...)
