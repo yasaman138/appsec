@@ -166,18 +166,31 @@ The system components were evaluated across the six STRIDE threat categories:
    - Enabled mandatory signature and expiration checks (`verify_signature: True`, `verify_exp: True`).
    - Forged or unsigned tokens (`alg: none`) are deterministically rejected with HTTP 401 Unauthorized.
 
-3. **Server-Side Request Forgery (SSRF):**
-   - Implemented DNS resolution and IP address sanitization in `validate_safe_url()`.
+3. **Server-Side Request Forgery (SSRF) & DNS Rebinding (TOCTOU):**
+   - Implemented DNS resolution and IP address sanitization in `validate_safe_url()` and `resolve_and_validate_target()`.
+   - Pre-resolved hostnames and pinned socket connections directly to validated IP addresses while preserving the `Host` header to eliminate secondary DNS resolution windows.
    - Blocked all private subnets (RFC 1918 Class A/B/C), Carrier-Grade NAT (RFC 6598), Link-Local / AWS/GCP metadata (`169.254.0.0/16`), and loopback (`127.0.0.0/8`, `::1`).
    - Automated SAST enforcement via custom Semgrep rule `ssrf-unvalidated-http-client.yml`.
+
+4. **Secret Management & Cryptographic Entropy Validation:**
+   - Enforced minimum 32-character (256-bit) entropy validator on `JWT_SECRET_KEY` in `AuthSettings` and `ApiSettings`.
+   - Added production runtime safety gates rejecting known weak and default placeholder keys.
+   - Implemented secret masking in representation methods to prevent accidental log leakage.
+
+5. **Rate Limiting & Abuse Prevention:**
+   - Deployed sliding window rate limiting across authentication (`/auth/login`, `/auth/register`) and external webhook testing (`/integrations/webhook-test`).
+   - Return standard `HTTP 429 Too Many Requests` responses with `Retry-After` headers upon threshold breach.
+
+6. **Database Connection Hardening & HTTP Security Headers:**
+   - Configured connection pooling with `pool_pre_ping=True`, `max_overflow`, and statement recycle intervals for PostgreSQL.
+   - Injected standard defensive HTTP headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `X-XSS-Protection`, `Strict-Transport-Security`, `Content-Security-Policy`, and `Cache-Control: no-store` on sensitive auth routes).
 
 ---
 
 ## 7. Residual Risks & Future Roadmap
 
-| Residual Risk | Impact | Recommended Future Enhancement |
-| :--- | :---: | :--- |
-| **DNS Rebinding (TOCTOU)** | Medium | Implement an egress proxy / custom HTTP transport adapter that pins the resolved socket IP directly at connection time. |
-| **Secret Management** | High | Migrate `JWT_SECRET_KEY` and database credentials from `.env` / container environment to HashiCorp Vault or AWS Secrets Manager with automated rotation. |
-| **Rate Limiting & DDoS** | Medium | Implement Redis-backed Token Bucket rate limiting middleware on `/auth/login` and `/integrations/webhook-test`. |
-| **Database Encryption at Rest**| Medium | Enable transparent disk encryption (LUKS / AWS KMS) on PostgreSQL storage volumes. |
+| Residual Risk | Likelihood | Impact | Current Defense & Recommended Future Enhancement |
+| :--- | :---: | :---: | :--- |
+| **Enterprise Secret Vault Integration** | Low | High | **Current:** Pydantic entropy validation + production placeholder rejection.<br>**Roadmap:** Connect HashiCorp Vault or AWS Secrets Manager sidecar for dynamic credential rotation. |
+| **Storage-at-Rest Encryption (Volume Level)** | Low | Medium | **Current:** In-memory isolation and scoped schema enforcement.<br>**Roadmap:** Enable LUKS or AWS KMS encrypted EBS volumes for production PostgreSQL persistent volumes. |
+

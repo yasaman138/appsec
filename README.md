@@ -29,6 +29,7 @@ A production-grade, containerized microservices security benchmark engineered to
 Modern cloud-native architectures require rigorous multi-tenant security guarantees, proactive static analysis, and automated exploit regression suites. This repository serves as an end-to-end security benchmark showcasing:
 - **Decoupled Microservice Mesh:** High-throughput Auth Service and Core Resource API with asynchronous SQLAlchemy ORM, PostgreSQL persistence, and Redis caching.
 - **Multi-Tenant Isolation:** Database-level compound predicate scoping and tenant-isolated caching namespaces.
+- **Hardened Ingress & Egress:** Sliding window rate limiting, defensive HTTP response headers, and SSRF/DNS-rebinding protection with socket IP pinning.
 - **Automated Exploit Harness:** Deterministic `pytest` exploit suite proving exploitability in vulnerable states and regression resistance post-remediation.
 - **Automated Shift-Left DevSecOps:** GitHub Actions pipeline integrating secret scanning (Gitleaks), container/SCA vulnerability scanning (Trivy), and custom AST-based static analysis rules (Semgrep).
 - **Formal Threat Modeling:** STRIDE-based threat modeling and root-cause vulnerability analyses mapped to MITRE CWE and OWASP standards.
@@ -44,8 +45,8 @@ flowchart TB
     end
 
     subgraph TZ1["Trust Zone 1: Service Ingress & Authentication Gate"]
-        AuthSvc["🔐 Auth Service (:8001)\n- Bcrypt Password Hashing\n- Strict HS256 JWT Minting\n- Token Verification API"]
-        CoreApi["📦 Core Resource API (:8002)\n- Multi-Tenant CRUD Operations\n- Context Authorization Middleware\n- SSRF Firewall & Webhook Dispatcher"]
+        AuthSvc["🔐 Auth Service (:8001)\n- Bcrypt Password Hashing\n- Strict HS256 JWT Minting\n- Rate Limiting Middleware\n- Token Verification API"]
+        CoreApi["📦 Core Resource API (:8002)\n- Multi-Tenant CRUD Operations\n- Context Authorization Middleware\n- SSRF & DNS-Rebinding Firewall"]
     end
 
     subgraph TZ2["Trust Zone 2: Isolated Container Mesh (appsec-net)"]
@@ -65,7 +66,7 @@ flowchart TB
     CoreApi -->|Async Wire Protocol| PgDb
     CoreApi -->|RESP Protocol| RedisCache
     CoreApi -->|Safe HTTP/S Egress| ExtWebhooks
-    CoreApi -.->|DNS Pre-flight Check Blocks| CloudMeta
+    CoreApi -.->|DNS Pre-flight & IP Pinning Blocks| CloudMeta
     CoreApi -.->|CIDR Validation Blocks| InternalNet
 ```
 
@@ -73,10 +74,10 @@ flowchart TB
 
 | Service | Port | Primary Responsibilities | Data Store / Caching |
 | :--- | :---: | :--- | :--- |
-| **Auth Service** (`services/auth`) | `8001` | User registration, password hashing (`bcrypt`), login authentication, strict HS256 JWT minting and claim validation. | PostgreSQL (`appsec_db.users`) |
-| **Core Resource API** (`services/api`) | `8002` | Multi-tenant resource CRUD, tenant-scoped caching, cache eviction, and SSRF-safe outbound webhook testing. | PostgreSQL (`appsec_db.records`) + Redis (`record:{tenant_id}:{id}`) |
-| **PostgreSQL Engine** | `5432` | Relational storage with strict foreign keys, indexes, and tenant context fields. | Persistent Volume (`postgres_data`) |
-| **Redis Cache** | `6379` | In-memory key-value cache enforcing tenant isolation and TTL management. | Persistent Volume (`redis_data`) |
+| **Auth Service** (`services/auth`) | `8001` | User registration, password hashing (`bcrypt`), login authentication, strict HS256 JWT minting and claim validation, sliding window rate limiting. | PostgreSQL (`appsec_db.users`) |
+| **Core Resource API** (`services/api`) | `8002` | Multi-tenant resource CRUD, tenant-scoped caching, cache eviction, SSRF & DNS-rebinding safe outbound webhook testing, HTTP security headers. | PostgreSQL (`appsec_db.records`) + Redis (`record:{tenant_id}:{id}`) |
+| **PostgreSQL Engine** | `5432` | Relational storage with strict foreign keys, indexes, and connection pooling with pre-ping validation. | Persistent Volume (`postgres_data`) |
+| **Redis Cache** | `6379` | In-memory key-value cache enforcing tenant isolation, distributed rate limiting, and TTL management. | Persistent Volume (`redis_data`) |
 
 ---
 
@@ -96,7 +97,7 @@ Every push and pull request to `main` undergoes automated validation across 4 sh
                                                   v
 +---------------------------------------------------------------------------------------------------+
 | 4. Functional & Exploit Regression Testing (Pytest)                                               |
-| - Executes 20 automated tests: unit suites, multi-tenant integration flows, and exploit suite     |
+| - Executes 26 automated tests: unit suites, multi-tenant integration flows, and exploit suite     |
 | - Verifies exploit payloads are rejected with HTTP 401 Unauthorized / 404 Not Found / 400 Bad Req |
 +---------------------------------------------------------------------------------------------------+
 ```
@@ -108,8 +109,8 @@ Every push and pull request to `main` undergoes automated validation across 4 sh
 | Vulnerability & Category | Root Cause Mechanism | Exploit Vector | Defense-in-Depth Remediation | SAST Rule Enforcement |
 | :--- | :--- | :--- | :--- | :--- |
 | **Broken Object-Level Authorization (BOLA / IDOR)**<br>`OWASP API1:2023`<br>`CWE-639 / CWE-284` | Unscoped database lookup (`select(Record).where(Record.id == id)`) | Tenant B accesses or overwrites Tenant A's records by UUID enumeration | Compound SQL query filtering (`WHERE id = :id AND tenant_id = :tenant_id`) + Redis cache namespace isolation | `.semgrep/idor-missing-tenant-filter.yml` |
-| **Broken Authentication (JWT 'none' Flaw)**<br>`OWASP API2:2023`<br>`CWE-327 / CWE-347` | Unrestricted JWT decode allowing unsigned or `alg: "none"` tokens | Attacker creates unsigned token claiming root admin rights on victim tenant | Enforce strict algorithm whitelist (`algorithms=["HS256"]`) and mandatory signature verification | PyJWT security configuration |
-| **Server-Side Request Forgery (SSRF)**<br>`OWASP API7:2023`<br>`CWE-918` | Unfiltered outbound HTTP client requests in webhook tester | Exfiltrates AWS/GCP metadata (`169.254.169.254`) or probes internal microservices | Pre-flight DNS resolution and CIDR validation blocking loopback, link-local, and RFC 1918 ranges | `.semgrep/ssrf-unvalidated-http-client.yml` |
+| **Broken Authentication (JWT 'none' Flaw)**<br>`OWASP API2:2023`<br>`CWE-327 / CWE-347` | Unrestricted JWT decode allowing unsigned or `alg: "none"` tokens | Attacker creates unsigned token claiming root admin rights on victim tenant | Enforce strict algorithm whitelist (`algorithms=["HS256"]`), minimum 32-char entropy validation, and mandatory signature verification | PyJWT security configuration |
+| **Server-Side Request Forgery (SSRF) & DNS Rebinding**<br>`OWASP API7:2023`<br>`CWE-918` | Unfiltered outbound HTTP client requests in webhook tester | Exfiltrates AWS/GCP metadata (`169.254.169.254`) or probes internal microservices via DNS rebinding | Pre-flight DNS resolution, IP pinning with Host preservation, and CIDR validation blocking loopback, link-local, and RFC 1918 ranges | `.semgrep/ssrf-unvalidated-http-client.yml` |
 
 *For complete technical analysis, see [Root-Cause Vulnerability Analysis](docs/vulnerability-analysis.md).*
 
@@ -134,7 +135,7 @@ curl http://localhost:8002/health
 
 ### 3. Run Automated Security & Regression Tests
 ```bash
-# Run all 20 unit, integration, and exploit regression tests
+# Run all 26 unit, integration, and exploit regression tests
 make test
 # Or using pytest directly:
 pytest -v tests/
