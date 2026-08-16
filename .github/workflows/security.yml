@@ -1,0 +1,109 @@
+name: Shift-Left Security Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secret-scan:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Detection
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: "true"
+
+  sast-semgrep:
+    name: Static Application Security Testing (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Semgrep SAST Scan
+        run: |
+          python -m pip install --upgrade pip
+          pip install semgrep
+          semgrep scan --config=.semgrep/ --config=p/security-audit --config=p/owasp-top-ten --error
+
+  sca-and-container-scan:
+    name: SCA & Container Scanning (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy Filesystem Scan (SCA)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          format: "table"
+          exit-code: "1"
+
+      - name: Build Auth Service Docker Image
+        run: |
+          docker build -t auth-service:latest -f services/auth/Dockerfile services/auth
+
+      - name: Scan Auth Service Container Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "auth-service:latest"
+          severity: "CRITICAL,HIGH"
+          format: "table"
+          exit-code: "1"
+
+      - name: Build API Service Docker Image
+        run: |
+          docker build -t api-service:latest -f services/api/Dockerfile services/api
+
+      - name: Scan API Service Container Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "api-service:latest"
+          severity: "CRITICAL,HIGH"
+          format: "table"
+          exit-code: "1"
+
+  test-suite:
+    name: Unit & Security Regression Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/api/requirements.txt -r services/auth/requirements.txt pytest pytest-asyncio
+
+      - name: Run Pytest Test Suite
+        run: |
+          pytest tests/unit/
