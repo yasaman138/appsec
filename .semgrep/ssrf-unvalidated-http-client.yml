@@ -1,0 +1,56 @@
+rules:
+  - id: ssrf-unvalidated-http-client
+    languages:
+      - python
+    severity: ERROR
+    message: >-
+      HTTP client call makes a network request to an unvalidated URL ($URL) without passing through an IP validation or SSRF sanitization wrapper.
+      This introduces a Server-Side Request Forgery (SSRF) vulnerability allowing unauthorized access to internal network services, cloud metadata endpoints, or localhost resources.
+    metadata:
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+      owasp:
+        - "A10:2021 - Server-Side Request Forgery (SSRF)"
+        - "API7:2023 - Server-Side Request Forgery"
+      category: security
+      technology:
+        - python
+        - httpx
+        - requests
+        - aiohttp
+      confidence: HIGH
+      impact: HIGH
+      likelihood: HIGH
+    paths:
+      exclude:
+        - "tests/"
+    patterns:
+      - pattern-either:
+          - pattern: $CLIENT.request(..., url=$URL, ...)
+          - pattern: httpx.request(..., url=$URL, ...)
+          - pattern: httpx.get($URL, ...)
+          - pattern: httpx.post($URL, ...)
+          - pattern: httpx.put($URL, ...)
+          - pattern: httpx.patch($URL, ...)
+          - pattern: httpx.delete($URL, ...)
+          - pattern: requests.request(..., url=$URL, ...)
+          - pattern: requests.get($URL, ...)
+          - pattern: requests.post($URL, ...)
+          - pattern: requests.put($URL, ...)
+          - pattern: requests.patch($URL, ...)
+          - pattern: requests.delete($URL, ...)
+          - pattern: urllib.request.urlopen($URL, ...)
+      - pattern-not: $CLIENT.request(..., url="...", ...)
+      - pattern-not: httpx.request(..., url="...", ...)
+      - pattern-not: httpx.get("...", ...)
+      - pattern-not: httpx.post("...", ...)
+      - pattern-not: httpx.put("...", ...)
+      - pattern-not: httpx.patch("...", ...)
+      - pattern-not: httpx.delete("...", ...)
+      - pattern-not: requests.request(..., url="...", ...)
+      - pattern-not: requests.get("...", ...)
+      - pattern-not: requests.post("...", ...)
+      - pattern-not: requests.put("...", ...)
+      - pattern-not: requests.patch("...", ...)
+      - pattern-not: requests.delete("...", ...)
+      - pattern-not: urllib.request.urlopen("...", ...)
