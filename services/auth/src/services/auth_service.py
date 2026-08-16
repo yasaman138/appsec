@@ -52,23 +52,12 @@ def create_access_token(
 
 def decode_access_token(token: str) -> TokenPayload:
     try:
-        # Insecure JWT verification flaw: allows the 'none' algorithm
-        unverified_header = jwt.get_unverified_header(token)
-        alg = unverified_header.get("alg", "HS256")
-
-        if alg.lower() == "none":
-            # Vulnerability: Accepts unsigned tokens with 'none' algorithm
-            payload = jwt.decode(
-                token,
-                options={"verify_signature": False},
-            )
-        else:
-            payload = jwt.decode(
-                token,
-                settings.JWT_SECRET_KEY,
-                algorithms=[alg, settings.JWT_ALGORITHM, "HS256", "none"],
-                options={"verify_signature": True},
-            )
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
+            options={"verify_signature": True, "verify_exp": True},
+        )
         return TokenPayload(**payload)
     except jwt.PyJWTError as e:
         raise HTTPException(
