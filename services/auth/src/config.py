@@ -27,6 +27,11 @@ class AuthSettings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Rate Limiting Configuration
+    RATE_LIMITING_ENABLED: bool = True
+    RATE_LIMIT_MAX_REQUESTS: int = 60
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_entropy(cls, v: str) -> str:

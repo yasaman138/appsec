@@ -71,3 +71,84 @@ async def get_current_user(
             detail=f"Could not validate credentials: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
+
+
+import time
+from collections import defaultdict
+from typing import Callable, Dict, List
+from fastapi import Request
+from services.api.src.cache import cache_client
+
+
+class RateLimiter:
+    """
+    Sliding window rate limiter with Redis backend and in-memory fallback.
+    """
+    def __init__(
+        self,
+        max_requests: Optional[int] = None,
+        window_seconds: Optional[int] = None,
+        prefix: str = "general",
+        key_func: Optional[Callable[[Request], str]] = None,
+    ):
+        self.max_requests = max_requests or settings.RATE_LIMIT_MAX_REQUESTS
+        self.window_seconds = window_seconds or settings.RATE_LIMIT_WINDOW_SECONDS
+        self.prefix = prefix
+        self.key_func = key_func or self._default_key_func
+        self._history: Dict[str, List[float]] = defaultdict(list)
+
+    @staticmethod
+    def _default_key_func(request: Request) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        client = request.client
+        return client.host if client else "unknown_client"
+
+    async def __call__(self, request: Request) -> None:
+        if not settings.RATE_LIMITING_ENABLED:
+            return
+
+        key = self.key_func(request)
+
+        # 1. If Redis is available, use distributed rate limiting
+        if cache_client.is_connected and cache_client._redis:
+            redis_key = f"ratelimit:{self.prefix}:{key}"
+            try:
+                current_count = await cache_client._redis.incr(redis_key)
+                if current_count == 1:
+                    await cache_client._redis.expire(redis_key, self.window_seconds)
+
+                if current_count > self.max_requests:
+                    ttl = await cache_client._redis.ttl(redis_key)
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Too many requests. Please try again later.",
+                        headers={"Retry-After": str(max(1, ttl))},
+                    )
+                return
+            except HTTPException:
+                raise
+            except Exception:
+                # Redis error -> fallback to in-memory
+                pass
+
+        # 2. In-memory sliding window fallback
+        now = time.time()
+        window_start = now - self.window_seconds
+        timestamps = self._history[key]
+        self._history[key] = [t for t in timestamps if t > window_start]
+
+        if len(self._history[key]) >= self.max_requests:
+            retry_after = int(self.window_seconds - (now - self._history[key][0]))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many requests. Please try again later.",
+                headers={"Retry-After": str(max(1, retry_after))},
+            )
+
+        self._history[key].append(now)
+
+    def reset(self) -> None:
+        self._history.clear()
+

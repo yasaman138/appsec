@@ -31,6 +31,11 @@ class ApiSettings(BaseSettings):
     JWT_SECRET_KEY: str = "appsec-super-secret-key-change-in-production-2026"
     JWT_ALGORITHM: str = "HS256"
 
+    # Rate Limiting Configuration
+    RATE_LIMITING_ENABLED: bool = True
+    RATE_LIMIT_MAX_REQUESTS: int = 60
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_entropy(cls, v: str) -> str:

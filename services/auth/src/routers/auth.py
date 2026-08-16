@@ -12,9 +12,11 @@ from services.auth.src.schemas.auth import (
     UserRegister,
     UserResponse,
 )
+from services.auth.src.security.rate_limiter import RateLimiter
 from services.auth.src.services.auth_service import AuthService, decode_access_token
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+auth_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 
 def get_auth_service(
@@ -42,6 +44,7 @@ async def get_current_user_payload(
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user",
+    dependencies=[Depends(auth_rate_limiter)],
 )
 async def register(
     user_in: UserRegister,
@@ -56,6 +59,7 @@ async def register(
     response_model=Token,
     status_code=status.HTTP_200_OK,
     summary="Authenticate and receive JWT token",
+    dependencies=[Depends(auth_rate_limiter)],
 )
 async def login(
     login_in: UserLogin,

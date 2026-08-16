@@ -80,3 +80,34 @@ async def test_auth_registration_and_login_flow():
         # 7. Unauthenticated request to /auth/me
         unauth_resp = await client.get("/auth/me")
         assert unauth_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_rate_limiting_enforcement():
+    from services.auth.src.routers.auth import auth_rate_limiter
+
+    # Set temporary low limit for test
+    orig_max = auth_rate_limiter.max_requests
+    auth_rate_limiter.max_requests = 2
+    auth_rate_limiter.reset()
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            login_data = {"username": "rate_user", "password": "Password123!"}
+            # Request 1 & 2 pass through to auth check (401 because user doesn't exist)
+            resp1 = await client.post("/auth/login", json=login_data)
+            resp2 = await client.post("/auth/login", json=login_data)
+            assert resp1.status_code == 401
+            assert resp2.status_code == 401
+
+            # Request 3 is blocked by rate limiter with 429
+            resp3 = await client.post("/auth/login", json=login_data)
+            assert resp3.status_code == 429
+            assert "Too many requests" in resp3.json()["detail"]
+            assert "retry-after" in resp3.headers
+    finally:
+        auth_rate_limiter.max_requests = orig_max
+        auth_rate_limiter.reset()
+

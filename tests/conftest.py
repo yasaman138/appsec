@@ -36,6 +36,12 @@ ApiTestSessionLocal = async_sessionmaker(
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def prepare_databases():
+    from services.auth.src.routers.auth import auth_rate_limiter
+    from services.api.src.routers.integrations import webhook_rate_limiter
+
+    auth_rate_limiter.reset()
+    webhook_rate_limiter.reset()
+
     # Setup Auth DB tables
     async with auth_test_engine.begin() as conn:
         await conn.run_sync(AuthBase.metadata.create_all)

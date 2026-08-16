@@ -66,3 +66,32 @@ def test_production_secret_key_hardening():
     assert prod_settings.APP_ENV == "production"
     assert "..." in prod_settings.get_masked_secret()
 
+
+@pytest.mark.asyncio
+async def test_sliding_window_rate_limiter():
+    from fastapi import HTTPException, Request
+    from services.auth.src.security.rate_limiter import RateLimiter
+
+    limiter = RateLimiter(max_requests=3, window_seconds=60)
+    
+    # Mock request
+    class MockRequest:
+        def __init__(self, ip: str):
+            self.headers = {"X-Forwarded-For": ip}
+            self.client = None
+
+    req = MockRequest("198.51.100.1")
+
+    # First 3 requests should pass
+    await limiter(req)
+    await limiter(req)
+    await limiter(req)
+
+    # 4th request must be rate limited with HTTP 429
+    with pytest.raises(HTTPException) as exc_info:
+        await limiter(req)
+    assert exc_info.value.status_code == 429
+    assert "Too many requests" in exc_info.value.detail
+    assert "Retry-After" in exc_info.value.headers
+
+
