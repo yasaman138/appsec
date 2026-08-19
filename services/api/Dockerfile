@@ -2,11 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install runtime and build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install runtime dependencies and security updates
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     curl \
-    build-essential \
-    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY services/api/requirements.txt /app/requirements.txt
