@@ -20,7 +20,7 @@ A production-grade, containerized microservices security benchmark engineered to
 4. [Vulnerability Lifecycle & Remediation Matrix](#-vulnerability-lifecycle--remediation-matrix)
 5. [Quickstart & Execution](#-quickstart--execution)
 6. [Security Documentation & Threat Modeling](#-security-documentation--threat-modeling)
-7. [CV / Resume-Ready Impact Framework](#-cv--resume-ready-impact-framework)
+7. [Key Security Engineering Highlights](#-key-security-engineering-highlights)
 
 ---
 
@@ -172,21 +172,19 @@ semgrep scan --config=.semgrep/ --error
 
 ---
 
-## 💼 CV / Resume-Ready Impact Framework
+## 🚀 Key Security Engineering Highlights
 
-Highlighting application security accomplishments from this project using the **Action + Mechanism + Impact** framework:
+- **Multi-Tenant Authorization & BOLA Elimination:**
+  Enforces compound database filtering (`WHERE id = :id AND tenant_id = :tenant_id`) alongside tenant-scoped Redis cache namespaces (`record:{tenant_id}:{id}`), preventing cross-tenant data access (OWASP API1:2023 / CWE-639).
 
-- **Multi-Tenant Authorization & BOLA Remediation:**
-  > *Architected and implemented multi-tenant data isolation across decoupled FastAPI microservices, replacing vulnerable primary-key queries with compound SQL filters (`WHERE id = :id AND tenant_id = :tenant_id`) and tenant-scoped Redis cache keys, eliminating Broken Object-Level Authorization (BOLA/IDOR) vulnerabilities (OWASP API1:2023 / CWE-639).*
+- **Shift-Left DevSecOps & AST Static Analysis:**
+  Integrated GitHub Actions pipeline enforcing Gitleaks secret detection, Trivy vulnerability scanning, and custom Semgrep AST rules to catch unscoped queries and unmediated HTTP client calls prior to deployment.
 
-- **Shift-Left DevSecOps & Custom SAST Engineering:**
-  > *Engineered an automated GitHub Actions shift-left security pipeline integrating Gitleaks, Trivy container scanning, and custom Semgrep AST static analysis rules to automatically detect unscoped ORM queries and unmediated HTTP client calls prior to production deployment.*
+- **SSRF & DNS-Rebinding Network Defense:**
+  Pre-flight DNS resolution with socket IP pinning and CIDR verification to block Server-Side Request Forgery against cloud metadata (`169.254.169.254`), loopback, and RFC 1918 internal subnets.
 
-- **SSRF Network Defense & Cloud Metadata Protection:**
-  > *Designed and deployed a pre-flight network validation engine with DNS resolution and CIDR filtering, mitigating Server-Side Request Forgery (SSRF / CWE-918) attempts against cloud provider metadata APIs (`169.254.169.254`), loopback, and RFC 1918 private subnets.*
-
-- **Automated Exploit Verification & Regression Harness:**
-  > *Constructed an automated `pytest` security regression harness validating both exploit execution against vulnerable configurations and deterministic rejection (`HTTP 401/404/400`) post-remediation, ensuring 100% test coverage with zero security regressions.*
+- **Automated Exploit Regression Harness:**
+  Deterministic `pytest` regression harness verifying exploit payloads are rejected (`HTTP 401 Unauthorized`, `404 Not Found`, `400 Bad Request`) across all critical trust boundaries.
 
 ---
 
