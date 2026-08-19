@@ -32,6 +32,18 @@ class AuthSettings(BaseSettings):
     RATE_LIMIT_MAX_REQUESTS: int = 60
     RATE_LIMIT_WINDOW_SECONDS: int = 60
 
+    # CORS Allowed Origins
+    ALLOWED_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:8001",
+        "http://localhost:8002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:8002",
+    ]
+
     @field_validator("JWT_SECRET_KEY")
     @classmethod
     def validate_jwt_secret_entropy(cls, v: str) -> str:
